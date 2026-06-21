@@ -5,7 +5,7 @@ Images are published to Docker Hub under the namespace configured by:
 ```
 RTYLR_IMAGE_REGISTRY=docker.io
 RTYLR_IMAGE_NAMESPACE=rtylr
-RTYLR_VERSION=3.300.13
+RTYLR_VERSION=1.0.0
 ```
 
 A single `RTYLR_VERSION` pins ALL images (backend and frontends) to the same

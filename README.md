@@ -28,7 +28,7 @@ license key. See [docs/license.md](docs/license.md).
 
 ```bash
 helm upgrade --install rtylr ./helm/rtylr \
-  --set image.tag=3.300.13 \
+  --set image.tag=1.0.0 \
   --set-string license.key=YOUR_LICENSE_KEY \
   --set-string secrets.jwtSecret=$(openssl rand -hex 32) \
   --set ingress.domain=example.com
@@ -64,7 +64,7 @@ datastore config. See [docs/backend-env.md](docs/backend-env.md).
 
 ## Versioning
 
-A single `RTYLR_VERSION` (in `versions.env`, e.g. `3.300.13`) pins all images to
+A single `RTYLR_VERSION` (in `versions.env`, e.g. `1.0.0`) pins all images to
 the same tag. Upgrade with `./scripts/update.sh <version>` (Compose) or
 `--set image.tag=<version>` (Helm). See [docs/upgrade.md](docs/upgrade.md).
 

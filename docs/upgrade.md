@@ -5,7 +5,7 @@ stack, Retool-style.
 
 ## The version
 
-`RTYLR_VERSION` (e.g. `3.300.13`) pins every image — backend and frontends — to
+`RTYLR_VERSION` (e.g. `1.0.0`) pins every image — backend and frontends — to
 the same Docker tag. It lives in `versions.env` (and `.env` for Compose); the
 Helm equivalent is `image.tag`.
 

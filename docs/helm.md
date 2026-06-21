@@ -15,7 +15,7 @@ Ingress, plus a ConfigMap/Secret for environment.
 
 ```bash
 helm upgrade --install rtylr ./helm/rtylr \
-  --set image.tag=3.300.13 \
+  --set image.tag=1.0.0 \
   --set-string license.key=YOUR_LICENSE_KEY \
   --set-string secrets.jwtSecret=$(openssl rand -hex 32) \
   --set ingress.domain=example.com \
@@ -30,7 +30,7 @@ helm upgrade --install rtylr ./helm/rtylr \
 
 ```bash
 helm upgrade --install rtylr ./helm/rtylr \
-  --set image.tag=3.300.13 \
+  --set image.tag=1.0.0 \
   --set-string license.key=YOUR_LICENSE_KEY \
   --set-string secrets.jwtSecret=$(openssl rand -hex 32) \
   --set ingress.domain=example.com \
