@@ -1,0 +1,69 @@
+{
+	# Local-friendly default. For production with real DNS, remove `auto_https off`
+	# and Caddy will provision TLS certificates automatically, or terminate TLS in
+	# front of this stack.
+	auto_https off
+}
+
+http://{$RTYLR_DOMAIN:localhost} {
+	respond "rtylr self-host is running" 200
+}
+
+# Backend API
+http://api.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy api:9999
+}
+
+# Media / CDN (self-host analog of cdn.voxire.com)
+http://upload.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy upload:8080
+}
+
+# Frontends (each is a static nginx serving on :8080 internally)
+http://auth.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy auth:8080
+}
+
+http://dash.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy dash:8080
+}
+
+http://pos.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy pos:8080
+}
+
+http://erp.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy erp:8080
+}
+
+http://hr.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy hr:8080
+}
+
+http://crm.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy crm:8080
+}
+
+http://finance.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy finance:8080
+}
+
+http://flow.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy flow:8080
+}
+
+http://insights.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy insights:8080
+}
+
+http://recruit.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy recruit:8080
+}
+
+http://menu.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy menu:8080
+}
+
+http://docs.{$RTYLR_DOMAIN:localhost} {
+	reverse_proxy docs:8080
+}

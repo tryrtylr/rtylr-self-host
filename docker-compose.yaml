@@ -1,0 +1,327 @@
+# rtylr self-host stack.
+#
+# Local infra (mysql, redis, floci) is gated behind the `local-infra` profile.
+# - To run fully self-contained: docker compose --profile local-infra up -d
+# - To bring your own MySQL/Redis/S3: leave the profile off and point
+#   DB_HOST / REDIS_URL / S3_* at your external services in .env.
+#
+# The only external dependency is the hosted license authority
+# (https://license.voxire.com), contacted by the `api` service. There is no
+# local license service.
+
+x-rtylr-image-defaults: &image-defaults
+  restart: unless-stopped
+
+# Shared backend environment (api, worker, upload).
+x-backend-env: &backend-env
+  DEPLOYMENT_MODE: ${DEPLOYMENT_MODE:-self_hosted}
+  APP_ENV: ${APP_ENV:-production}
+  RTYLR_LICENSE_KEY: ${RTYLR_LICENSE_KEY:-}
+  # Configurable URLs
+  AUTH_URL: ${AUTH_URL:-http://auth.localhost}
+  DASH_URL: ${DASH_URL:-http://dash.localhost}
+  POS_URL: ${POS_URL:-http://pos.localhost}
+  ERP_URL: ${ERP_URL:-http://erp.localhost}
+  HR_URL: ${HR_URL:-http://hr.localhost}
+  CRM_URL: ${CRM_URL:-http://crm.localhost}
+  FINANCE_URL: ${FINANCE_URL:-http://finance.localhost}
+  FLOW_URL: ${FLOW_URL:-http://flow.localhost}
+  INSIGHTS_URL: ${INSIGHTS_URL:-http://insights.localhost}
+  RECRUIT_URL: ${RECRUIT_URL:-http://recruit.localhost}
+  MENU_URL: ${MENU_URL:-http://menu.localhost}
+  DOCS_URL: ${DOCS_URL:-http://docs.localhost}
+  API_URL: ${API_URL:-http://api.localhost}
+  UPLOAD_URL: ${UPLOAD_URL:-http://upload.localhost}
+  # CORS origins derived from the configured frontend URLs.
+  CORS_ALLOWED_ORIGINS: ${AUTH_URL:-http://auth.localhost},${DASH_URL:-http://dash.localhost},${POS_URL:-http://pos.localhost},${ERP_URL:-http://erp.localhost},${HR_URL:-http://hr.localhost},${CRM_URL:-http://crm.localhost},${FINANCE_URL:-http://finance.localhost},${FLOW_URL:-http://flow.localhost},${INSIGHTS_URL:-http://insights.localhost},${RECRUIT_URL:-http://recruit.localhost},${MENU_URL:-http://menu.localhost},${DOCS_URL:-http://docs.localhost}
+  # Secrets
+  JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+  INTERNAL_TOKEN: ${INTERNAL_TOKEN:-}
+  CDN_API_KEY: ${CDN_API_KEY:-}
+  # Database
+  DB_HOST: ${DB_HOST:-db}
+  DB_PORT: ${DB_PORT:-3306}
+  DB_NAME: ${DB_NAME:-rtylr_self_host}
+  DB_USER: ${DB_USER:-rtylr_user}
+  DB_PASSWORD: ${DB_PASSWORD:-}
+  # Cache
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  # Object storage (S3-compatible)
+  S3_BUCKET_NAME: ${S3_BUCKET_NAME:-rtylr-self-host}
+  S3_REGION: ${S3_REGION:-us-east-1}
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://floci:4566}
+  S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+  AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-rtylr}
+  AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+  CDN_MAX_UPLOAD_MB: ${CDN_MAX_UPLOAD_MB:-100}
+  # Optional passthrough integrations
+  SENTRY_DSN: ${SENTRY_DSN:-}
+  AXIOM_TOKEN: ${AXIOM_TOKEN:-}
+  AXIOM_DATASET: ${AXIOM_DATASET:-}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  OPENAI_ORG_ID: ${OPENAI_ORG_ID:-}
+  OPENAI_BASE_URL: ${OPENAI_BASE_URL:-}
+  GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+  NVIDIA_NIM_API_KEY: ${NVIDIA_NIM_API_KEY:-}
+  AI_PRIMARY_PROVIDER: ${AI_PRIMARY_PROVIDER:-}
+  PADDLE_API_KEY: ${PADDLE_API_KEY:-}
+  PADDLE_WEBHOOK_SECRET: ${PADDLE_WEBHOOK_SECRET:-}
+  PADDLE_CLIENT_TOKEN: ${PADDLE_CLIENT_TOKEN:-}
+  PADDLE_SANDBOX: ${PADDLE_SANDBOX:-true}
+
+# Shared frontend runtime config. Official frontend images read these at
+# container start and expose them to the browser runtime config.
+x-frontend-env: &frontend-env
+  API_URL: ${API_URL:-http://api.localhost}
+  UPLOAD_URL: ${UPLOAD_URL:-http://upload.localhost}
+  AUTH_URL: ${AUTH_URL:-http://auth.localhost}
+  DASH_URL: ${DASH_URL:-http://dash.localhost}
+
+x-frontend-defaults: &frontend-defaults
+  <<: *image-defaults
+  expose:
+    - "8080"
+  depends_on:
+    api:
+      condition: service_healthy
+  networks:
+    - rtylr
+  healthcheck:
+    test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/ || exit 1"]
+    interval: 30s
+    timeout: 5s
+    retries: 5
+    start_period: 20s
+
+networks:
+  rtylr:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:
+  floci_data:
+  caddy_data:
+  caddy_config:
+
+services:
+  # -------------------------------------------------------------------------
+  # Reverse proxy
+  # -------------------------------------------------------------------------
+  caddy:
+    <<: *image-defaults
+    image: caddy:2-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      RTYLR_DOMAIN: ${RTYLR_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - rtylr
+    depends_on:
+      - api
+      - upload
+
+  # -------------------------------------------------------------------------
+  # Backend (Onion runmodes)
+  # -------------------------------------------------------------------------
+  api:
+    <<: *image-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/api:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *backend-env
+    expose:
+      - "9999"
+    networks:
+      - rtylr
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9999/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  worker:
+    <<: *image-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/worker:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *backend-env
+    networks:
+      - rtylr
+    depends_on:
+      api:
+        condition: service_healthy
+
+  upload:
+    <<: *image-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/upload:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *backend-env
+    expose:
+      - "8080"
+    networks:
+      - rtylr
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # Frontends (static nginx, :8080 internal)
+  # -------------------------------------------------------------------------
+  auth:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/auth:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  dash:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/dash:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  pos:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/pos:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  erp:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/erp:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  hr:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/hr:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  crm:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/crm:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  finance:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/finance:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  flow:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/flow:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  insights:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/insights:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  recruit:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/recruit:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  menu:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/menu:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  docs:
+    <<: *frontend-defaults
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/docs:${RTYLR_VERSION:-latest}
+    environment:
+      <<: *frontend-env
+
+  # -------------------------------------------------------------------------
+  # Local infrastructure (profile: local-infra). Omit the profile and point
+  # DB_HOST / REDIS_URL / S3_* at external services to bring your own.
+  # -------------------------------------------------------------------------
+  db:
+    <<: *image-defaults
+    image: mysql:8.0
+    profiles: ["local-infra"]
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-rtylr_self_host}
+      MYSQL_USER: ${MYSQL_USER:-rtylr_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required for local-infra}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - rtylr
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p\"$$MYSQL_ROOT_PASSWORD\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    <<: *image-defaults
+    image: redis:7-alpine
+    profiles: ["local-infra"]
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
+    networks:
+      - rtylr
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  floci:
+    <<: *image-defaults
+    image: localstack/localstack:3
+    profiles: ["local-infra"]
+    environment:
+      SERVICES: s3
+      EDGE_PORT: 4566
+    volumes:
+      - floci_data:/var/lib/localstack
+    networks:
+      - rtylr
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  floci-init:
+    image: amazon/aws-cli:2
+    profiles: ["local-infra"]
+    restart: "no"
+    entrypoint: ["/bin/sh", "/init/create-bucket.sh"]
+    environment:
+      FLOCI_BUCKET: ${FLOCI_BUCKET:-rtylr-self-host}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-rtylr}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-floci}
+      AWS_DEFAULT_REGION: ${S3_REGION:-us-east-1}
+      AWS_ENDPOINT_URL: ${S3_ENDPOINT:-http://floci:4566}
+    volumes:
+      - ./floci/init:/init:ro
+    networks:
+      - rtylr
+    depends_on:
+      floci:
+        condition: service_healthy
