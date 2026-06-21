@@ -1,0 +1,36 @@
+name: Validate
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare environment
+        run: cp .env.example .env
+      - name: Validate Compose file (external infra)
+        run: docker compose --env-file .env config >/dev/null
+      - name: Validate Compose file (local-infra profile)
+        run: docker compose --profile local-infra --env-file .env config >/dev/null
+      - name: Check shell scripts
+        run: bash -n scripts/*.sh && sh -n floci/init/*.sh
+
+  helm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-helm@v4
+      - name: Lint chart
+        run: helm lint helm/rtylr --set secrets.jwtSecret=ci_jwt_secret_at_least_32_chars_xxxx
+      - name: Template chart (external infra)
+        run: helm template rtylr helm/rtylr --set secrets.jwtSecret=ci_jwt_secret_at_least_32_chars_xxxx >/dev/null
+      - name: Template chart (local-infra)
+        run: |
+          helm template rtylr helm/rtylr \
+            --set secrets.jwtSecret=ci_jwt_secret_at_least_32_chars_xxxx \
+            --set localInfra.mysql.enabled=true --set localInfra.mysql.rootPassword=rootpw \
+            --set localInfra.redis.enabled=true \
+            --set localInfra.floci.enabled=true >/dev/null
