@@ -21,6 +21,9 @@ the stack is production-ready.
 {{- end }}
 {{- end }}
 
+The database schema was applied automatically by the migrate hook Job before the
+backend rolled out (idempotent — no manual migration step).
+
 Datastores:
   MySQL: {{ if .Values.localInfra.mysql.enabled }}bundled (evaluation){{ else }}external @ {{ .Values.database.host }}{{ end }}
   Redis: {{ if .Values.localInfra.redis.enabled }}bundled (evaluation){{ else }}external @ {{ .Values.redis.url }}{{ end }}

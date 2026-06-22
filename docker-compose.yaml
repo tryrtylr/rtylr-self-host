@@ -124,6 +124,30 @@ services:
       - upload
 
   # -------------------------------------------------------------------------
+  # Schema bootstrap (one-shot). Applies the database schema idempotently before
+  # the backend starts. Safe to re-run on every up/upgrade — it exits 0 when the
+  # schema is already current. Works for both the bundled MySQL (local-infra) and
+  # an external DB (DB_HOST pointed at your own server).
+  # -------------------------------------------------------------------------
+  migrate:
+    image: ${RTYLR_IMAGE_REGISTRY:-docker.io}/${RTYLR_IMAGE_NAMESPACE:-rtylr}/migrate:${RTYLR_VERSION:-latest}
+    restart: "no"
+    environment:
+      DB_HOST: ${DB_HOST:-db}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_NAME: ${DB_NAME:-rtylr_self_host}
+      DB_USER: ${DB_USER:-rtylr_user}
+      DB_PASSWORD: ${DB_PASSWORD:-}
+    networks:
+      - rtylr
+    depends_on:
+      db:
+        condition: service_healthy
+        # The bundled db only exists under the local-infra profile; when bringing
+        # your own DB it is simply absent and this dependency is skipped.
+        required: false
+
+  # -------------------------------------------------------------------------
   # Backend (Onion runmodes)
   # -------------------------------------------------------------------------
   api:
@@ -135,6 +159,9 @@ services:
       - "9999"
     networks:
       - rtylr
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:9999/health || exit 1"]
       interval: 30s
@@ -152,6 +179,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
 
   upload:
     <<: *image-defaults

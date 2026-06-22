@@ -1,0 +1,80 @@
+{{- /*
+Schema bootstrap. Runs the rtylr migrate image, which applies the database
+schema idempotently (safe to re-run; exits 0 when done). Wired as a pre-install
+and pre-upgrade Helm hook with a low hook-weight so the schema is in place before
+the backend Deployments roll. DB env is read directly from values (not the env
+ConfigMap/Secret) because those are ordinary resources that may not exist yet
+when this hook runs. A wait-for-db initContainer blocks until the database
+accepts TCP connections; the migrate image itself also retries on connect.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "rtylr.fullname" . }}-migrate
+  labels:
+    {{- include "rtylr.labels" . | nindent 4 }}
+    app.kubernetes.io/name: migrate
+    app.kubernetes.io/component: migrate
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 10
+  template:
+    metadata:
+      labels:
+        {{- include "rtylr.labels" . | nindent 8 }}
+        app.kubernetes.io/name: migrate
+        app.kubernetes.io/component: migrate
+    spec:
+      restartPolicy: OnFailure
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      initContainers:
+        - name: wait-for-db
+          image: busybox:1.36
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              host="{{ .Values.database.host }}"
+              port="{{ .Values.database.port }}"
+              echo "waiting for ${host}:${port} ..."
+              i=0
+              until nc -z "$host" "$port" >/dev/null 2>&1; do
+                i=$((i + 1)); [ "$i" -ge 60 ] && { echo "db not reachable"; exit 1; }
+                sleep 2
+              done
+              echo "db ${host}:${port} is up"
+      containers:
+        - name: migrate
+          image: {{ include "rtylr.image" (list . "migrate") }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: DB_HOST
+              value: {{ .Values.database.host | quote }}
+            - name: DB_PORT
+              value: {{ .Values.database.port | quote }}
+            - name: DB_NAME
+              value: {{ .Values.database.name | quote }}
+            - name: DB_USER
+              value: {{ .Values.database.user | quote }}
+            {{- if .Values.secrets.existingSecret }}
+            # Pre-install/upgrade hook: the env Secret is created with the chart,
+            # but an existing user-managed Secret is present before the hook runs,
+            # so read the password from it when one is configured.
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecret }}
+                  key: DB_PASSWORD
+            {{- else }}
+            - name: DB_PASSWORD
+              value: {{ .Values.database.password | quote }}
+            {{- end }}
+          {{- with .Values.migrate.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}

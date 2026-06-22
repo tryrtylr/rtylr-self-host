@@ -92,6 +92,12 @@ backend:
     port: 8080
     resources: {}
 
+# Schema bootstrap. The `migrate` image applies the database schema idempotently
+# as a pre-install/pre-upgrade hook Job, before the backend Deployments roll.
+# There is no manual migration step.
+migrate:
+  resources: {}
+
 # Frontends. Each is a static nginx serving on :8080.
 frontends:
   auth:

@@ -65,6 +65,11 @@ A single `RTYLR_VERSION` (in `versions.env`, e.g. `1.0.0`) pins all images to
 the same tag. Upgrade with `./scripts/update.sh <version>` (Compose) or
 `--set image.tag=<version>` (Helm).
 
+The database schema is applied automatically on every install and upgrade — the
+`migrate` image runs as a one-shot Compose service / pre-install,pre-upgrade Helm
+hook Job before the backend starts. It is idempotent, so there is no manual
+migration step (bundled MySQL or external DB).
+
 ## Backups
 
 ```bash
