@@ -5,8 +5,8 @@ type: application
 version: 0.1.0
 # appVersion is the default image tag; override with image.tag / RTYLR_VERSION.
 appVersion: "1.0.0"
-home: https://github.com/voxire/rtylr-self-host
+home: https://github.com/tryrtylr/rtylr-self-host
 sources:
-  - https://github.com/voxire/rtylr-self-host
+  - https://github.com/tryrtylr/rtylr-self-host
 maintainers:
   - name: Voxire
